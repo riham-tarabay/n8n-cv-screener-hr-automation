@@ -1,0 +1,222 @@
+{
+  "name": "AI CV Screener & HR Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [{"mode": "everyMinute"}]
+        },
+        "filters": {
+          "q": "subject:CV OR subject:Resume OR subject:Application has:attachment"
+        }
+      },
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.3,
+      "position": [-600, 0],
+      "id": "gmail-trigger",
+      "name": "Gmail: New Application Email"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "messageId": "={{ $json.id }}",
+        "options": {
+          "attachmentsPrefix": "attachment_",
+          "downloadAttachments": true
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-400, 0],
+      "id": "get-attachments",
+      "name": "Download CV Attachment"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert HR recruiter. Analyze this CV and return ONLY valid JSON with no markdown:\n{\n  \"candidate_name\": \"\",\n  \"email\": \"\",\n  \"phone\": \"\",\n  \"years_experience\": 0,\n  \"current_role\": \"\",\n  \"top_skills\": [],\n  \"education_level\": \"Bachelor/Master/PhD/Other\",\n  \"education_field\": \"\",\n  \"languages\": [],\n  \"fit_score\": 0,\n  \"fit_score_reason\": \"\",\n  \"strengths\": [],\n  \"weaknesses\": [],\n  \"recommended_action\": \"Interview/Hold/Reject\",\n  \"interview_questions\": [],\n  \"summary\": \"\"\n}\n\nJob Requirements for context:\n- Role: AI/ML Engineer\n- Required: Python, Machine Learning, Deep Learning\n- Nice to have: LLMs, RAG, Docker, FastAPI\n- Experience: 1+ years or strong portfolio\n- Education: CS or Engineering degree preferred"
+            },
+            {
+              "content": "=Analyze this CV:\n\nApplicant email: {{ $('Gmail: New Application Email').item.json.from }}\nEmail subject: {{ $('Gmail: New Application Email').item.json.subject }}\nEmail body: {{ $('Gmail: New Application Email').item.json.snippet }}\n\nCV Content: {{ $json.data }}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2,
+      "position": [-100, 0],
+      "id": "analyze-cv",
+      "name": "AI CV Analysis"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "parse-cv",
+              "name": "cv_data",
+              "value": "={{ JSON.parse($json.output[0].content[0].text) }}",
+              "type": "object"
+            },
+            {
+              "id": "application-date",
+              "name": "applied_at",
+              "value": "={{ $now }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [100, 0],
+      "id": "parse-cv-data",
+      "name": "Parse CV Data"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {"caseSensitive": false, "leftValue": "", "typeValidation": "strict"},
+          "conditions": [
+            {
+              "id": "check-action",
+              "leftValue": "={{ $json.cv_data.recommended_action }}",
+              "rightValue": "Interview",
+              "operator": {"type": "string", "operation": "equals"}
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [300, 0],
+      "id": "route-decision",
+      "name": "Route: Interview or Not?"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parse CV Data').item.json.cv_data.email }}",
+        "subject": "🎉 Interview Invitation — AI/ML Engineer Position",
+        "emailType": "html",
+        "message": "=<div style='font-family: Arial, sans-serif; max-width: 600px;'>\n<h2>Dear {{ $('Parse CV Data').item.json.cv_data.candidate_name }},</h2>\n<p>Thank you for applying for the <strong>AI/ML Engineer</strong> position.</p>\n<p>After reviewing your application, we are pleased to invite you for an interview. Your background in <strong>{{ $('Parse CV Data').item.json.cv_data.top_skills.slice(0,3).join(', ') }}</strong> stood out to us.</p>\n<p>Our team will reach out within 2 business days to schedule a convenient time.</p>\n<p>To help you prepare, here are some areas we will explore:</p>\n<ul>{{ $('Parse CV Data').item.json.cv_data.interview_questions.map(q => '<li>' + q + '</li>').join('') }}</ul>\n<p>We look forward to speaking with you!</p>\n<br/>\n<p>Best regards,<br/><strong>HR Team</strong></p>\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [550, -150],
+      "id": "send-interview-email",
+      "name": "Send Interview Invitation"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parse CV Data').item.json.cv_data.email }}",
+        "subject": "Re: Your Application — AI/ML Engineer Position",
+        "emailType": "html",
+        "message": "=<div style='font-family: Arial, sans-serif; max-width: 600px;'>\n<h2>Dear {{ $('Parse CV Data').item.json.cv_data.candidate_name }},</h2>\n<p>Thank you for your interest in the <strong>AI/ML Engineer</strong> position and for taking the time to apply.</p>\n<p>After careful review of your application, we have decided to move forward with other candidates whose qualifications more closely match our current requirements.</p>\n<p>We appreciate your interest and encourage you to apply for future opportunities.</p>\n<br/>\n<p>Best regards,<br/><strong>HR Team</strong></p>\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [550, 150],
+      "id": "send-rejection-email",
+      "name": "Send Polite Rejection"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Candidates",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "applied_at": "={{ $('Parse CV Data').item.json.applied_at }}",
+            "name": "={{ $('Parse CV Data').item.json.cv_data.candidate_name }}",
+            "email": "={{ $('Parse CV Data').item.json.cv_data.email }}",
+            "current_role": "={{ $('Parse CV Data').item.json.cv_data.current_role }}",
+            "years_experience": "={{ $('Parse CV Data').item.json.cv_data.years_experience }}",
+            "fit_score": "={{ $('Parse CV Data').item.json.cv_data.fit_score }}",
+            "top_skills": "={{ $('Parse CV Data').item.json.cv_data.top_skills.join(', ') }}",
+            "education": "={{ $('Parse CV Data').item.json.cv_data.education_level + ' - ' + $('Parse CV Data').item.json.cv_data.education_field }}",
+            "recommended_action": "={{ $('Parse CV Data').item.json.cv_data.recommended_action }}",
+            "summary": "={{ $('Parse CV Data').item.json.cv_data.summary }}",
+            "strengths": "={{ $('Parse CV Data').item.json.cv_data.strengths.join(', ') }}",
+            "weaknesses": "={{ $('Parse CV Data').item.json.cv_data.weaknesses.join(', ') }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [800, 0],
+      "id": "log-candidate",
+      "name": "Log to Candidates Sheet"
+    },
+    {
+      "parameters": {
+        "channel": "hiring-pipeline",
+        "text": "=*New Application Processed* 🤖\n\n*Candidate:* {{ $('Parse CV Data').item.json.cv_data.candidate_name }}\n*Role:* {{ $('Parse CV Data').item.json.cv_data.current_role }}\n*Experience:* {{ $('Parse CV Data').item.json.cv_data.years_experience }} years\n*Fit Score:* {{ $('Parse CV Data').item.json.cv_data.fit_score }}/100\n*Decision:* {{ $('Parse CV Data').item.json.cv_data.recommended_action }}\n*Top Skills:* {{ $('Parse CV Data').item.json.cv_data.top_skills.slice(0,4).join(', ') }}\n\n_{{ $('Parse CV Data').item.json.cv_data.summary }}_",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [1000, 0],
+      "id": "notify-slack",
+      "name": "Notify HR on Slack"
+    }
+  ],
+  "connections": {
+    "Gmail: New Application Email": {
+      "main": [[{"node": "Download CV Attachment", "type": "main", "index": 0}]]
+    },
+    "Download CV Attachment": {
+      "main": [[{"node": "AI CV Analysis", "type": "main", "index": 0}]]
+    },
+    "AI CV Analysis": {
+      "main": [[{"node": "Parse CV Data", "type": "main", "index": 0}]]
+    },
+    "Parse CV Data": {
+      "main": [[{"node": "Route: Interview or Not?", "type": "main", "index": 0}]]
+    },
+    "Route: Interview or Not?": {
+      "main": [
+        [{"node": "Send Interview Invitation", "type": "main", "index": 0}],
+        [{"node": "Send Polite Rejection", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Interview Invitation": {
+      "main": [[{"node": "Log to Candidates Sheet", "type": "main", "index": 0}]]
+    },
+    "Send Polite Rejection": {
+      "main": [[{"node": "Log to Candidates Sheet", "type": "main", "index": 0}]]
+    },
+    "Log to Candidates Sheet": {
+      "main": [[{"node": "Notify HR on Slack", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {"executionOrder": "v1"},
+  "meta": {"templateCredsSetupCompleted": false},
+  "tags": ["hr", "recruitment", "ai", "automation", "cv-screening"]
+}
